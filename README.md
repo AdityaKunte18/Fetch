@@ -8,3 +8,8 @@ My idea:
 - Can also specify data output (optional)
 - Agents will communicate with each other to figure out where the data is contained, and then parse using bs4
   
+Motivation
+- Atlas, Comet are great freemium tools, but I think it should be free.
+
+References:
+- I read this paper and it had very similar ideas: https://arxiv.org/abs/2503.02950
