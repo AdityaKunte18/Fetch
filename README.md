@@ -13,3 +13,7 @@ Motivation
 
 References:
 - I read this paper and it had very similar ideas: https://arxiv.org/abs/2503.02950
+
+Update:
+
+- look at PLaywright MCP which provides tools that agents can use to explore browsers
