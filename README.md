@@ -9,7 +9,7 @@ My idea:
 - Agents will communicate with each other to figure out where the data is contained, and then parse using bs4
   
 Motivation
-- Atlas, Comet are great freemium tools, but I think it should be free.
+- Atlas, Comet are great freemium tools, but I think it should be fully free (or the user can just provide their LLM API key and pay for that).
 
 References:
 - I read this paper and it had very similar ideas: https://arxiv.org/abs/2503.02950
@@ -17,3 +17,4 @@ References:
 Update:
 
 - look at PLaywright MCP which provides tools that agents can use to explore browsers
+- Vercel Agent Browser CLI just launched
