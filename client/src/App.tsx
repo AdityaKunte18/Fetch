@@ -18,13 +18,11 @@ function App() {
   }, [url]);
 
   const handleWebSocketMessage = useCallback((msg: InboundMessage) => {
-    // Frame messages update the viewport preview, don't add to chat
     if (msg.type === 'frame') {
       setViewportFrame(msg.data);
       return;
     }
 
-    // Status messages go to chat as agent messages
     if (msg.type === 'status' || msg.type === 'echo' || msg.type === 'error') {
       const agentMsg: ChatMessage = {
         id: crypto.randomUUID(),
@@ -37,7 +35,6 @@ function App() {
       return;
     }
 
-    // Result messages go to both chat and results panel
     if (msg.type === 'result') {
       const agentMsg: ChatMessage = {
         id: crypto.randomUUID(),

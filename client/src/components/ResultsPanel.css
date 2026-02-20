@@ -73,16 +73,25 @@
 
 /* Viewport tab */
 .results-panel__viewport {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
+  overflow: hidden;
+}
+
+.results-panel__viewport-body {
+  flex: 1;
   background: #000;
   overflow: hidden;
+  min-height: 0;
 }
 
 .results-panel__viewport-img {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  display: block;
 }
 
 /* Empty state */

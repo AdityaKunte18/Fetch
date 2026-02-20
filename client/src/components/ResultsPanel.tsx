@@ -45,29 +45,31 @@ export function ResultsPanel({ results, agentStatus, viewportFrame }: ResultsPan
       <div className={`results-panel__content ${activeTab === 'results' ? 'results-panel__content--padded' : ''}`}>
         {activeTab === 'viewport' && (
           <div className="results-panel__viewport">
-            {viewportFrame ? (
-              <img
-                className="results-panel__viewport-img"
-                src={`data:image/jpeg;base64,${viewportFrame}`}
-                alt="Browser viewport"
-              />
-            ) : (
-              <div className="results-panel__empty">
-                <div className="results-panel__empty-icon">
-                  <div className="results-panel__browser-frame">
-                    <div className="results-panel__browser-bar" />
+            <div className="results-panel__viewport-body">
+              {viewportFrame ? (
+                <img
+                  className="results-panel__viewport-img"
+                  src={`data:image/jpeg;base64,${viewportFrame}`}
+                  alt="Browser viewport"
+                />
+              ) : (
+                <div className="results-panel__empty">
+                  <div className="results-panel__empty-icon">
+                    <div className="results-panel__browser-frame">
+                      <div className="results-panel__browser-bar" />
+                    </div>
                   </div>
+                  <p>
+                    {agentStatus === 'scraping' || agentStatus === 'thinking'
+                      ? 'Loading browser preview...'
+                      : 'Browser preview will appear here'}
+                  </p>
+                  <p className="results-panel__hint">
+                    Enter a URL and describe what to extract
+                  </p>
                 </div>
-                <p>
-                  {agentStatus === 'scraping' || agentStatus === 'thinking'
-                    ? 'Loading browser preview...'
-                    : 'Browser preview will appear here'}
-                </p>
-                <p className="results-panel__hint">
-                  Enter a URL and describe what to extract
-                </p>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
 

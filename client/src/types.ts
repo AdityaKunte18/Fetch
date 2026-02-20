@@ -16,9 +16,10 @@ export interface OutboundMessage {
 }
 
 export interface InboundMessage {
-  type: 'echo' | 'status' | 'result' | 'error' | 'frame';
+  type: 'echo' | 'status' | 'result' | 'error' | 'frame' | 'navigate';
   data: string;
   status?: AgentStatus;
+  title?: string;
 }
 
 export interface ResultData {
