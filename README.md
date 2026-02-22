@@ -1,0 +1,4 @@
+- Plug in URL
+- Describe layout
+- Option to select parts of the page using inspect element
+- 
