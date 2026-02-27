@@ -87,9 +87,6 @@ export function ResultsPanel({ results, agentStatus, viewportFrame }: ResultsPan
                 {results.map((result) => (
                   <div key={result.id} className="results-panel__card">
                     <div className="results-panel__card-header">
-                      {result.url && (
-                        <span className="results-panel__card-url">{result.url}</span>
-                      )}
                       <span className="results-panel__card-time">
                         {formatTime(result.timestamp)}
                       </span>

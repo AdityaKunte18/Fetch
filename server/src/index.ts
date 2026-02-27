@@ -13,20 +13,40 @@ const OLLAMA_URL =
   process.env.OLLAMA_URL ?? "http://localhost:11434/v1/chat/completions";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "phi3:mini";
 
-const SYSTEM_PROMPT = `You control a web browser. You see the current page as an accessibility tree.
+const ROUTER_PROMPT = `You are Fetch, a friendly AI browser assistant. You help users browse the web and perform tasks.
+
+Your job: decide if the user's message requires a browser action or is just conversation.
+
+If the user wants you to do something in a browser (visit a website, search, click, fill a form, find information online, etc.), respond with exactly:
+ACTION
+
+If the user is just chatting, greeting, asking a question that doesn't need a browser, or if you need more details before you can act, respond normally as a helpful assistant. Keep responses concise (1-3 sentences). Ask follow-up questions if the request is vague.
+
+Examples:
+- "Hello" → respond with a greeting
+- "What can you do?" → explain your capabilities
+- "Go to google.com" → ACTION
+- "Search for laptops on amazon" → ACTION
+- "Find me cheap flights" → ACTION
+- "What's the weather?" → ACTION (needs a browser to check)
+- "Search for something" → ask what they want to search for
+- "Can you help me?" → ask what they need help with`;
+
+const AGENT_PROMPT = `You control a web browser. You see the current page as an accessibility tree.
 
 Available actions (respond with exactly ONE action per message):
 
+navigate <url>
 click <selector>
 type <selector> <text>
 scroll up
 scroll down
-navigate <url>
 done <summary of what you found or accomplished>
 
 Rules:
-- <selector> must be a CSS selector or text from the accessibility tree
-- For type, put the selector first, then the text. Example: type input#search hello world
+- If the user mentions a website, use navigate first. Example: navigate https://www.google.com
+- <selector> must be a CSS selector from the accessibility tree.
+- For type, put the selector first, then the text. Example: type #search-input hello world
 - Respond with ONLY the action line. No explanation, no markdown, no extra text.
 - When the task is complete, use done with a brief summary.`;
 
@@ -182,6 +202,7 @@ interface Session {
   browser: BrowserManager;
   currentUrl: string;
   frameTimer: ReturnType<typeof setInterval> | null;
+  chatHistory: OllamaMessage[];
 }
 
 const sessions = new Map<WebSocket, Session>();
@@ -228,7 +249,7 @@ async function ensureSession(socket: WebSocket): Promise<Session> {
   );
   if (!launchRes.success) throw new Error(`Launch failed: ${launchRes.error}`);
 
-  session = { browser, currentUrl: "", frameTimer: null };
+  session = { browser, currentUrl: "", frameTimer: null, chatHistory: [] };
   sessions.set(socket, session);
   startFrameLoop(socket, session);
 
@@ -245,52 +266,101 @@ async function destroySession(socket: WebSocket) {
   } catch { /* ignore */ }
 }
 
+// ── Chat history (per socket, survives before browser launch) ─
+
+const chatHistories = new Map<WebSocket, OllamaMessage[]>();
+
+function getChatHistory(socket: WebSocket): OllamaMessage[] {
+  let history = chatHistories.get(socket);
+  if (!history) {
+    history = [];
+    chatHistories.set(socket, history);
+  }
+  return history;
+}
+
+// ── Router: chat vs browser action ───────────────────────────
+
+async function handleMessage(
+  socket: WebSocket,
+  instruction: string
+) {
+  try {
+    const chatHistory = getChatHistory(socket);
+    chatHistory.push({ role: "user", content: instruction });
+
+    // Ask the LLM: is this a browser task or just chat?
+    send(socket, { type: "status", data: "Thinking...", status: "thinking" });
+
+    const routerMessages: OllamaMessage[] = [
+      { role: "system", content: ROUTER_PROMPT },
+      ...chatHistory,
+    ];
+
+    const routerResponse = await callOllama(routerMessages);
+
+    if (routerResponse.trim() === "ACTION") {
+      // It's a browser task — run the agent loop
+      chatHistory.push({ role: "assistant", content: "On it!" });
+      send(socket, { type: "status", data: "On it!", status: "scraping" });
+      await runAgentLoop(socket, instruction);
+    } else {
+      // It's conversation — send the response as a chat message
+      chatHistory.push({ role: "assistant", content: routerResponse });
+      send(socket, {
+        type: "status",
+        data: routerResponse,
+        status: "idle",
+      });
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    send(socket, { type: "error", data: `Error: ${message}`, status: "error" });
+  }
+}
+
 // ── Agent loop ───────────────────────────────────────────────
 
-async function handleCommand(
+async function runAgentLoop(
   socket: WebSocket,
-  payload: { url: string; instruction: string }
+  instruction: string
 ) {
-  const { url, instruction } = payload;
-
   try {
     const session = await ensureSession(socket);
 
-    // Navigate if a URL is provided and differs from current
-    if (url && url !== session.currentUrl) {
-      send(socket, { type: "status", data: `Navigating to ${url}...`, status: "scraping" });
-
-      const navRes = await executeCommand(
-        { id: nextId(), action: "navigate", url },
-        session.browser
-      );
-      if (navRes.success) {
-        const navData = navRes.data as NavigateData;
-        session.currentUrl = navData.url ?? url;
-      }
-    }
-
-    // Agent conversation history (kept for context across steps)
+    // Agent conversation (separate from chat history — focused on actions)
     const conversation: OllamaMessage[] = [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: AGENT_PROMPT },
     ];
 
     for (let step = 0; step < MAX_AGENT_STEPS; step++) {
-      // Get fresh snapshot
-      send(socket, {
-        type: "status",
-        data: `Step ${step + 1}: Reading page...`,
-        status: "scraping",
-      });
+      // Get fresh snapshot (skip if page is blank)
+      let tree = "";
+      const currentPage = session.browser.getPage();
+      const pageUrl = currentPage.url();
+      const isBlank = !pageUrl || pageUrl === "about:blank";
 
-      const snapshot = await session.browser.getSnapshot({ interactive: true });
-      const tree = snapshot.tree;
+      if (!isBlank) {
+        send(socket, {
+          type: "status",
+          data: `Step ${step + 1}: Reading page...`,
+          status: "scraping",
+        });
+        const snapshot = await session.browser.getSnapshot({ interactive: true });
+        tree = snapshot.tree;
+      }
 
-      // Build user message: snapshot + instruction (first turn) or snapshot + result (subsequent)
-      const userContent =
-        step === 0
+      // Build user message
+      let userContent: string;
+      if (step === 0) {
+        userContent = tree
           ? `Page snapshot:\n${tree}\n\nTask: ${instruction}`
-          : `Page snapshot after action:\n${tree}`;
+          : `The browser is on a blank page. Task: ${instruction}`;
+      } else {
+        userContent = tree
+          ? `Page snapshot after action:\n${tree}`
+          : `The page is blank or loading.`;
+      }
 
       conversation.push({ role: "user", content: userContent });
 
@@ -315,6 +385,13 @@ async function handleCommand(
       const action = parseAction(llmResponse);
 
       if (action.name === "done") {
+        // Store result in chat history too
+        const chatHistory = getChatHistory(socket);
+        chatHistory.push({
+          role: "assistant",
+          content: action.summary ?? "Task complete.",
+        });
+
         send(socket, {
           type: "result",
           data: action.summary ?? "Task complete.",
@@ -324,7 +401,6 @@ async function handleCommand(
       }
 
       if (action.name === "unknown") {
-        // LLM gave an unparseable response, ask it to retry
         conversation.push({
           role: "user",
           content:
@@ -369,7 +445,7 @@ const start = async () => {
 
   fastify.get("/ws", { websocket: true }, (socket) => {
     socket.on("message", (raw: Buffer) => {
-      let parsed: { type?: string; url?: string; instruction?: string };
+      let parsed: { type?: string; instruction?: string };
       try {
         parsed = JSON.parse(raw.toString());
       } catch {
@@ -379,16 +455,16 @@ const start = async () => {
 
       if (
         parsed.type === "command" &&
-        typeof parsed.url === "string" &&
         typeof parsed.instruction === "string"
       ) {
-        handleCommand(socket, { url: parsed.url, instruction: parsed.instruction });
+        handleMessage(socket, parsed.instruction);
       } else {
         send(socket, { type: "echo", data: raw.toString() });
       }
     });
 
     socket.on("close", () => {
+      chatHistories.delete(socket);
       destroySession(socket);
     });
   });

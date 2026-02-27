@@ -11,20 +11,17 @@ export interface ChatMessage {
 
 export interface OutboundMessage {
   type: 'command';
-  url: string;
   instruction: string;
 }
 
 export interface InboundMessage {
-  type: 'echo' | 'status' | 'result' | 'error' | 'frame' | 'navigate';
+  type: 'echo' | 'status' | 'result' | 'error' | 'frame';
   data: string;
   status?: AgentStatus;
-  title?: string;
 }
 
 export interface ResultData {
   id: string;
   content: string;
   timestamp: number;
-  url?: string;
 }
