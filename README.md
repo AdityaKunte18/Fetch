@@ -1,4 +1,3 @@
-- Plug in URL
-- Describe layout
-- Option to select parts of the page using inspect element
-- 
+- Input prompt
+- Configurable API key
+- LLM's task is to come up with a script that can scrape your choice of data
