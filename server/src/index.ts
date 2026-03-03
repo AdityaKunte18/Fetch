@@ -3,6 +3,7 @@ import websocket from "@fastify/websocket";
 import { BrowserManager } from "agent-browser/dist/browser.js";
 import { executeCommand } from "agent-browser/dist/actions.js";
 import type { WebSocket } from "ws";
+import type { CDPSession } from "playwright-core";
 import type { NavigateData } from "agent-browser/dist/types.js";
 
 const fastify = Fastify({ logger: true });
@@ -202,26 +203,29 @@ interface Session {
   browser: BrowserManager;
   currentUrl: string;
   frameTimer: ReturnType<typeof setInterval> | null;
-  chatHistory: OllamaMessage[];
+  cdp: CDPSession | null; // dedicated CDP session for frame capture
 }
 
 const sessions = new Map<WebSocket, Session>();
 
 function startFrameLoop(socket: WebSocket, session: Session) {
   if (session.frameTimer) return;
+  if (!session.cdp) return;
 
+  const cdp = session.cdp;
   let capturing = false;
+
   session.frameTimer = setInterval(async () => {
     if (capturing) return;
-    if (!session.browser.isLaunched()) return;
-
     capturing = true;
     try {
-      const page = session.browser.getPage();
-      const buffer = await page.screenshot({ type: "jpeg", quality: 60 });
-      send(socket, { type: "frame", data: buffer.toString("base64") });
+      const result = await cdp.send("Page.captureScreenshot", {
+        format: "jpeg",
+        quality: 60,
+      });
+      send(socket, { type: "frame", data: result.data });
     } catch {
-      // page may be navigating
+      // page may be navigating or closing
     } finally {
       capturing = false;
     }
@@ -249,7 +253,11 @@ async function ensureSession(socket: WebSocket): Promise<Session> {
   );
   if (!launchRes.success) throw new Error(`Launch failed: ${launchRes.error}`);
 
-  session = { browser, currentUrl: "", frameTimer: null, chatHistory: [] };
+  // Create a dedicated CDP session for frame capture — independent of Playwright ops
+  const page = browser.getPage();
+  const cdp = await page.context().newCDPSession(page);
+
+  session = { browser, currentUrl: "", frameTimer: null, cdp };
   sessions.set(socket, session);
   startFrameLoop(socket, session);
 
@@ -261,6 +269,9 @@ async function destroySession(socket: WebSocket) {
   if (!session) return;
   sessions.delete(socket);
   stopFrameLoop(session);
+  try {
+    if (session.cdp) await session.cdp.detach();
+  } catch { /* ignore */ }
   try {
     await session.browser.close();
   } catch { /* ignore */ }
@@ -299,7 +310,7 @@ async function handleMessage(
 
     const routerResponse = await callOllama(routerMessages);
 
-    if (routerResponse.trim() === "ACTION") {
+    if (routerResponse.trim().toUpperCase().startsWith("ACTION")) {
       // It's a browser task — run the agent loop
       chatHistory.push({ role: "assistant", content: "On it!" });
       send(socket, { type: "status", data: "On it!", status: "scraping" });
@@ -364,7 +375,6 @@ async function runAgentLoop(
 
       conversation.push({ role: "user", content: userContent });
 
-      // Call LLM
       send(socket, {
         type: "status",
         data: `Step ${step + 1}: Thinking...`,
@@ -374,7 +384,6 @@ async function runAgentLoop(
       const llmResponse = await callOllama(conversation);
       conversation.push({ role: "assistant", content: llmResponse });
 
-      // Show what the LLM said
       send(socket, {
         type: "status",
         data: `Agent: ${llmResponse}`,
@@ -385,13 +394,11 @@ async function runAgentLoop(
       const action = parseAction(llmResponse);
 
       if (action.name === "done") {
-        // Store result in chat history too
         const chatHistory = getChatHistory(socket);
         chatHistory.push({
           role: "assistant",
           content: action.summary ?? "Task complete.",
         });
-
         send(socket, {
           type: "result",
           data: action.summary ?? "Task complete.",
@@ -416,14 +423,12 @@ async function runAgentLoop(
         status: "scraping",
       });
 
-      // Feed result back into conversation for next iteration
       conversation.push({ role: "user", content: `Action result: ${result}` });
 
-      // Small delay to let the page settle
+      // Let the page settle after action
       await new Promise((r) => setTimeout(r, 500));
     }
 
-    // Hit max steps
     send(socket, {
       type: "result",
       data: "Reached maximum steps. The task may not be fully complete.",
