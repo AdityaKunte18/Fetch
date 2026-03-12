@@ -8,7 +8,7 @@ import type { NavigateData } from "agent-browser/dist/types.js";
 
 const fastify = Fastify({ logger: true });
 
-const FRAME_INTERVAL_MS = 66; // ~15 fps
+const FRAME_INTERVAL_MS = 100; // ~10 fps
 const MAX_AGENT_STEPS = 10;
 const OLLAMA_URL =
   process.env.OLLAMA_URL ?? "http://localhost:11434/v1/chat/completions";
@@ -203,7 +203,7 @@ interface Session {
   browser: BrowserManager;
   currentUrl: string;
   frameTimer: ReturnType<typeof setInterval> | null;
-  cdp: CDPSession | null; // dedicated CDP session for frame capture
+  cdp: CDPSession | null;
 }
 
 const sessions = new Map<WebSocket, Session>();
@@ -223,9 +223,11 @@ function startFrameLoop(socket: WebSocket, session: Session) {
         format: "jpeg",
         quality: 60,
       });
-      send(socket, { type: "frame", data: result.data });
-    } catch {
-      // page may be navigating or closing
+      if (result.data) {
+        send(socket, { type: "frame", data: result.data });
+      }
+    } catch (err) {
+      fastify.log.error("Frame capture error: %s", (err as Error).message);
     } finally {
       capturing = false;
     }
@@ -253,9 +255,10 @@ async function ensureSession(socket: WebSocket): Promise<Session> {
   );
   if (!launchRes.success) throw new Error(`Launch failed: ${launchRes.error}`);
 
-  // Create a dedicated CDP session for frame capture — independent of Playwright ops
+  // Create a dedicated CDP session for frame capture
   const page = browser.getPage();
   const cdp = await page.context().newCDPSession(page);
+  fastify.log.info("CDP session created for frame capture");
 
   session = { browser, currentUrl: "", frameTimer: null, cdp };
   sessions.set(socket, session);
