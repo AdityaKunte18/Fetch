@@ -21,6 +21,14 @@ export function ChatMessage({ message }: ChatMessageProps) {
     );
   }
 
+  if (message.role === 'step') {
+    return (
+      <div className="chat-message chat-message--step">
+        <span className="chat-message__step-text">{message.content}</span>
+      </div>
+    );
+  }
+
   return (
     <div className={`chat-message chat-message--${message.role}`}>
       <div className="chat-message__avatar">

@@ -79,3 +79,16 @@
   color: var(--text-tertiary);
   padding: var(--space-sm) var(--space-lg);
 }
+
+.chat-message--step {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 0 var(--space-xs);
+}
+
+.chat-message__step-text {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}

@@ -19,9 +19,10 @@ function App() {
     }
 
     if (msg.type === 'status' || msg.type === 'echo' || msg.type === 'error') {
+      const isStep = msg.type === 'status' && msg.status !== 'idle';
       const agentMsg: ChatMessage = {
         id: crypto.randomUUID(),
-        role: 'agent',
+        role: isStep ? 'step' : 'agent',
         content: msg.data,
         timestamp: Date.now(),
       };

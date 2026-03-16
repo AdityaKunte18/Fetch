@@ -4,7 +4,7 @@ export type AgentStatus = 'idle' | 'thinking' | 'scraping' | 'done' | 'error';
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'agent' | 'system';
+  role: 'user' | 'agent' | 'system' | 'step';
   content: string;
   timestamp: number;
 }
