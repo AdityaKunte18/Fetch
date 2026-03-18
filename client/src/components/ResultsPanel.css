@@ -82,7 +82,7 @@
 
 .results-panel__viewport-body {
   flex: 1;
-  background: #000;
+  background: var(--viewport-bg);
   overflow: hidden;
   min-height: 0;
 }

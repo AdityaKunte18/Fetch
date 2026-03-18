@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { TopBar } from './components/TopBar';
 import { ChatPanel } from './components/ChatPanel';
@@ -6,11 +6,35 @@ import { ResultsPanel } from './components/ResultsPanel';
 import type { ChatMessage, AgentStatus, ResultData, OutboundMessage, InboundMessage } from './types';
 import './App.css';
 
+type Theme = 'dark' | 'light';
+
+const THEME_STORAGE_KEY = 'fetch-theme';
+
+function getInitialTheme(): Theme {
+  if (typeof window === 'undefined') {
+    return 'dark';
+  }
+
+  const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+  if (storedTheme === 'dark' || storedTheme === 'light') {
+    return storedTheme;
+  }
+
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [results, setResults] = useState<ResultData[]>([]);
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('idle');
   const [viewportFrame, setViewportFrame] = useState<string | null>(null);
+  const [theme, setTheme] = useState<Theme>(getInitialTheme);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
 
   const handleWebSocketMessage = useCallback((msg: InboundMessage) => {
     if (msg.type === 'frame') {
@@ -56,6 +80,10 @@ function App() {
     onMessage: handleWebSocketMessage,
   });
 
+  const handleToggleTheme = useCallback(() => {
+    setTheme((currentTheme) => (currentTheme === 'dark' ? 'light' : 'dark'));
+  }, []);
+
   const handleSendMessage = useCallback(
     (instruction: string) => {
       const userMsg: ChatMessage = {
@@ -79,7 +107,11 @@ function App() {
   return (
     <div className="app">
       <div className="app__top-bar">
-        <TopBar connectionStatus={connectionStatus} />
+        <TopBar
+          connectionStatus={connectionStatus}
+          theme={theme}
+          onToggleTheme={handleToggleTheme}
+        />
       </div>
       <div className="app__chat-panel">
         <ChatPanel

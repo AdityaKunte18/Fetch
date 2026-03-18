@@ -54,7 +54,7 @@
 
 .chat-message--user .chat-message__content {
   background: var(--accent-muted);
-  border: 1px solid rgba(62, 207, 180, 0.2);
+  border: 1px solid var(--accent-border);
   color: var(--text-primary);
 }
 
